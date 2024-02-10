@@ -22,7 +22,7 @@ public class OnlinePaymentConsumer {
 
         try {
             Payment paymentDTO = objectMapper.readValue(record.value(), Payment.class);
-            paymentService.validatePayment(paymentDTO);
+            paymentService.addPayment(paymentDTO, Boolean.TRUE);
 
             // Your logic for handling online payment messages
         } catch (Exception e) {

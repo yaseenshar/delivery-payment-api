@@ -24,7 +24,7 @@ public class OfflinePaymentConsumer {
         try {
             Payment paymentDTO = objectMapper.readValue(record.value(), Payment.class);
 
-            paymentService.addPayment(paymentDTO);
+            paymentService.addPayment(paymentDTO, Boolean.FALSE);
 
             // Your logic for handling online payment messages
         } catch (Exception e) {

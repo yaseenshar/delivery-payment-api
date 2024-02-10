@@ -23,98 +23,74 @@ public class PaymentService {
     private final Mapper mapper;
     private final RestTemplate restTemplate;
     private final AppProperties appProperties;
-
     private final AppConfig appConfig;
+    private final LogService logService;
 
-    public PaymentService(PaymentRepository paymentRepository, RestTemplate restTemplate, AppConfig appConfig, AppProperties appProperties, Mapper mapper) {
+    public PaymentService(PaymentRepository paymentRepository, RestTemplate restTemplate, AppConfig appConfig,
+                          AppProperties appProperties, LogService logService, Mapper mapper) {
         this.paymentRepository = paymentRepository;
         this.restTemplate = restTemplate;
         this.appProperties = appProperties;
         this.appConfig = appConfig;
+        this.logService = logService;
         this.mapper = mapper;
     }
 
-    public void addPayment(com.paymentapi.model.Payment paymentDTO) throws SQLException {
+    public void savePayment(com.paymentapi.model.Payment payment) throws SQLException {
 
         try {
-            Payment payment = mapper.mapToPaymentEntity(paymentDTO);
-            paymentRepository.save(payment);
+            Payment paymentEntity = mapper.mapToPaymentEntity(payment);
+            paymentRepository.save(paymentEntity);
         } catch (Exception ex) {
             throw new SQLException(ex.getMessage());
         }
 
     }
 
-    public void validatePayment(com.paymentapi.model.Payment payment) {
+    public void addPayment(com.paymentapi.model.Payment payment, boolean validatePayment) {
 
         try {
 
-            String url = new StringBuilder().append(appProperties.getApiUrl()).append(AppConstant.TargetURI.PAYMENT).toString();
+            if (validatePayment) {
+                String url = new StringBuilder().append(appProperties.getApiUrl()).append(AppConstant.TargetURI.PAYMENT).toString();
 
-            // Make an HTTP GET request using the exchange method
-            ResponseEntity<LogErrorRequest> responseEntity = restTemplate.exchange(
-                    url,
-                    HttpMethod.POST,
-                    appConfig.getHTTPEntity(payment),
-                    LogErrorRequest.class
-            );
+                // Make an HTTP GET request using the exchange method
+                ResponseEntity<LogErrorRequest> responseEntity = restTemplate.exchange(
+                        url,
+                        HttpMethod.POST,
+                        appConfig.getHTTPEntity(payment),
+                        LogErrorRequest.class
+                );
 
-            // Inspect the response status and body
-            HttpStatusCode statusCode = responseEntity.getStatusCode();
+                // Inspect the response status and body
+                HttpStatusCode statusCode = responseEntity.getStatusCode();
 
-            if (statusCode.equals(HttpStatus.OK))
-                addPayment(payment);
-             else
-                logErrors(responseEntity.getBody());
+                if (statusCode.equals(HttpStatus.OK)) {
 
+                    savePayment(payment);
+                }
+                else if (responseEntity.getBody() != null) {
 
+                    logService.logErrors(responseEntity.getBody().getPaymentId(), responseEntity.getBody().getErrorType(), responseEntity.getBody().getErrorDescription());
+                }
+            } else {
+                savePayment(payment);
+            }
         } catch (SQLException e) {
             // Handle other SQLExceptions
             log.error("SQLException: " + e.getMessage());
-            LogErrorRequest logErrorRequest = new LogErrorRequest(payment.getPaymentId(), AppConstant.EXCEPTION_DATABASE, e.getMessage());
 
-            logErrors(logErrorRequest);
+            logService.logErrors(payment.getPaymentId(), AppConstant.EXCEPTION_DATABASE, e.getMessage());
         } catch (RestClientException e) {
             // Handle Rest Client (e.g., timeout, connectivity issues)
             log.error("Error: Network issue - " + e.getMessage());
 
-            LogErrorRequest logErrorRequest = new LogErrorRequest(payment.getPaymentId(), AppConstant.EXCEPTION_NETWORK, e.getMessage());
-
-            logErrors(logErrorRequest);
+            logService.logErrors(payment.getPaymentId(), AppConstant.EXCEPTION_NETWORK, e.getMessage());
         } catch (Exception e) {
             // Handle general exceptions
             log.error("Exception: " + e.getMessage());
 
-            LogErrorRequest logErrorRequest = new LogErrorRequest(payment.getPaymentId(), AppConstant.EXCEPTION_REST, e.getMessage());
-
-            logErrors(logErrorRequest);
+            logService.logErrors(payment.getPaymentId(), AppConstant.EXCEPTION_REST, e.getMessage());
         }
-
-
-    }
-
-
-    private void logErrors(LogErrorRequest logErrorRequest) {
-        try {
-
-            // Create a request entity with the headers
-            HttpEntity<LogErrorRequest> requestEntity = new HttpEntity<>(logErrorRequest, appConfig.headerConfig());
-
-            String url = new StringBuilder().append(appProperties.getApiUrl()).append(AppConstant.TargetURI.LOG).toString();
-
-            // Make an HTTP GET request using the exchange method
-            ResponseEntity<LogErrorRequest> responseEntity = restTemplate.exchange(
-                    url,
-                    HttpMethod.POST,
-                    requestEntity,
-                    LogErrorRequest.class
-            );
-
-            HttpStatusCode statusCode = responseEntity.getStatusCode();
-        }
-        catch (Exception exception) {
-            log.error("LogAPI Exception: " + exception.getMessage());
-        }
-
     }
 }
